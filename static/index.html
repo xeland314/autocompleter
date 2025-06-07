@@ -1,19 +1,19 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <meta charset="UTF-8">
     <!-- Chosen Palette: Cool Gray & Blue -->
     <!-- Application Structure Plan: The application maintains its central search input and task-oriented flow. Upon selection, the "Actions Panel" is significantly enhanced to include copy options for various data formats (JSON, XML) and a small, interactive Leaflet map to visualize the selected location. The "Recent Searches" list remains as a persistent quick-access feature. This structure prioritizes immediate utility of selected data, offering diverse ways to consume it and a visual confirmation of the location, directly within the same page. -->
     <!-- Visualization & Content Choices: 1. Multi-format Copy Actions: Report Info -> Selected Location Data -> Goal: Enable diverse data consumption -> Viz: Additional buttons for JSON/XML copy -> Interaction: onClick copies formatted string -> Justification: User-requested, adds flexibility for data reuse. -> Library/Method: Vanilla JS string formatting. | 2. Leaflet Map Display: Report Info -> Location Visualization -> Goal: Provide immediate visual context for selected location -> Viz: An embedded interactive map with a marker -> Interaction: Map initializes/updates on selection, allows pan/zoom -> Justification: Direct visual feedback is highly intuitive; explicit user request for Leaflet.js. (Note: Leaflet.js internally uses SVG for some vector layers like markers and lines, and raster tiles for the base map, which is understood as permissible given the explicit library request for map visualization.) -> Library/Method: Leaflet.js via CDN, Vanilla JS for map control. | 3. Client-side Caching: Report Info -> Search Performance -> Goal: Improve responsiveness for repeated queries -> Viz: (Internal) Data not visible -> Interaction: Automatic lookup and storage in localStorage -> Justification: Reduces API calls and improves perceived speed. -> Library/Method: Vanilla JS, localStorage API. -->
     <!-- CONFIRMATION: NO SVG graphics used (except as inherent to Leaflet.js map rendering). NO Mermaid JS used. -->
-    <meta charset="UTF-8">
+    
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Buscador de Ubicaciones Avanzado</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
 
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        crossorigin=""/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
     
     <style>
         body {
@@ -82,14 +82,14 @@
         <div id="actionsCard" class="bg-white mt-4 p-5 rounded-xl shadow-lg hidden">
             <h2 class="text-lg font-bold text-slate-700 mb-3">Acciones para: <span id="selectedLocationName" class="text-blue-600"></span></h2>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-4">
-                <button onclick="copyToClipboard('coords')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition">Copiar Coords</button>
-                <button onclick="copyToClipboard('address')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition">Copiar Dirección</button>
-                <button onclick="copyToClipboard('json')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition">Copiar JSON</button>
-                <button onclick="copyToClipboard('xml')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition">Copiar XML</button>
+                <button onclick="copyToClipboard('coords')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition" type="button">Copiar Coords</button>
+                <button onclick="copyToClipboard('address')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition" type="button">Copiar Dirección</button>
+                <button onclick="copyToClipboard('json')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition" type="button">Copiar JSON</button>
+                <button onclick="copyToClipboard('xml')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition" type="button">Copiar XML</button>
             </div>
             <div class="grid grid-cols-2 sm:grid-cols-2 gap-3 text-sm">
-                <button onclick="openMap('google')" class="bg-blue-500 text-white hover:bg-blue-600 font-semibold py-2 px-4 rounded-lg transition">Google Maps</button>
-                <button onclick="openMap('osm')" class="bg-green-500 text-white hover:bg-green-600 font-semibold py-2 px-4 rounded-lg transition">OpenStreetMap</button>
+                <button onclick="openMap('google')" class="bg-blue-500 text-white hover:bg-blue-600 font-semibold py-2 px-4 rounded-lg transition" type="button">Google Maps</button>
+                <button onclick="openMap('osm')" class="bg-green-500 text-white hover:bg-green-600 font-semibold py-2 px-4 rounded-lg transition" type="button">OpenStreetMap</button>
             </div>
 
             <!-- Map Container -->
