@@ -1,0 +1,31 @@
+[Unit]
+Description=FastAPI Autocompleter Server
+After=network.target
+
+[Service]
+# Ejecuta el servicio bajo un usuario y grupo específico.
+# Se recomienda crear este usuario por seguridad.
+User=autocompleter
+Group=autocompleter
+
+# Directorio de trabajo de la aplicación
+WorkingDirectory=/opt/autocompleter
+
+# Comando para iniciar la aplicación Uvicorn
+# Se usa el entorno virtual creado y la aplicación 'app' dentro de 'main.py'
+ExecStart=/opt/autocompleter/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8089
+
+# Tipo de servicio
+Type=simple
+
+# Reiniciar el servicio en caso de fallo
+Restart=on-failure
+RestartSec=10
+
+# Configuración de los límites del proceso (opcional, pero buena práctica)
+LimitNOFILE=65535
+
+[Install]
+# El servicio se iniciará cuando el sistema alcance el estado multi-usuario
+WantedBy=multi-user.target
+
