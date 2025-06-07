@@ -31,8 +31,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 request_history = defaultdict(deque)
 
 # Define los límites de solicitudes en segundos
-LIMIT_PER_SECOND_WINDOW = 1.0  # Para la regla de 1 solicitud por segundo
-LIMIT_PER_MINUTE = 15
+LIMIT_PER_SECOND_WINDOW = 2.0  # Para la regla de 2 solicitudes por segundo
+LIMIT_PER_MINUTE = 20
 WINDOW_MINUTE = 60.0
 LIMIT_PER_HOUR = 500
 WINDOW_HOUR = 3600.0
