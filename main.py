@@ -1,11 +1,12 @@
+import os
+import time
+from collections import defaultdict, deque
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import requests
-import os
-import time
-from collections import defaultdict, deque
+
 
 # Inicializa la aplicación FastAPI
 app = FastAPI()
