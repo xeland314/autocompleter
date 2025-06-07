@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <!-- Chosen Palette: Cool Gray & Blue -->
+    <!-- Application Structure Plan: The application is structured around a central search input. Key user interactions trigger the appearance of contextual modules below it: 1) A list of suggestions appears during the search. 2) Upon selection, an "Actions Panel" is displayed with buttons for map integration and copying data. 3) Below the main component, a "Recent Searches" list is persistently displayed, populated from localStorage. This task-oriented flow (Search -> Select -> Act) is intuitive and keeps the interface clean, only showing information and actions when they are relevant to the user's current step. -->
+    <!-- Visualization & Content Choices: 1. Map/Copy Actions: Report Info -> Actions on Selection -> Goal: Allow user to use the found data -> Viz: A group of interactive buttons -> Interaction: onClick opens new tabs or copies to clipboard -> Justification: Buttons are the standard for user-initiated actions. -> Library/Method: Vanilla JS, Tailwind. | 2. Recent Searches: Report Info -> Search History -> Goal: Quick access to past results -> Viz: A styled list of clickable items -> Interaction: onClick triggers a new search for that item, list is populated from localStorage on load -> Justification: Reduces user effort for repeated tasks. -> Library/Method: Vanilla JS, localStorage API, Tailwind. | 3. Loading/Keyboard Nav: Report Info -> UI/UX Enhancements -> Goal: Improve feedback & accessibility -> Viz: A loading spinner and a highlight class for active items -> Interaction: Spinner visibility toggled during fetch, keydown listener handles navigation -> Justification: Core UX principles for a responsive feel. -> Library/Method: Vanilla JS, Tailwind. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador de Ubicaciones Avanzado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9; /* slate-100 */
+        }
+        .suggestion-item.active {
+            background-color: #3b82f6; /* blue-500 */
+            color: white;
+        }
+        .loader {
+            border: 4px solid #f3f3f3; /* light grey */
+            border-top: 4px solid #3b82f6; /* blue */
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 md:p-8">
+
+    <div class="max-w-2xl mx-auto">
+        <!-- Main Search Card -->
+        <div class="bg-white p-6 rounded-xl shadow-lg">
+            <h1 class="text-2xl sm:text-3xl font-bold text-slate-800 mb-4 text-center">Buscador de Ubicaciones</h1>
+            <div class="relative">
+                <input type="text" id="searchInput" placeholder="Escribe una ciudad, calle o lugar..."
+                       class="w-full p-3 pl-10 text-base border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg class="h-5 w-5 text-slate-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div id="loader" class="absolute inset-y-0 right-0 pr-3 flex items-center hidden">
+                    <div class="loader"></div>
+                </div>
+            </div>
+            <ul id="suggestionsList" class="mt-2 border border-slate-200 rounded-lg bg-white shadow-md max-h-80 overflow-y-auto hidden"></ul>
+        </div>
+
+        <!-- Selected Location Actions Card -->
+        <div id="actionsCard" class="bg-white mt-4 p-5 rounded-xl shadow-lg hidden">
+            <h2 class="text-lg font-bold text-slate-700 mb-3">Acciones para: <span id="selectedLocationName" class="text-blue-600"></span></h2>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                <button onclick="copyToClipboard('coords')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition">Copiar Coords</button>
+                <button onclick="copyToClipboard('address')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition">Copiar Dirección</button>
+                <button onclick="openMap('google')" class="bg-blue-500 text-white hover:bg-blue-600 font-semibold py-2 px-4 rounded-lg transition">Google Maps</button>
+                <button onclick="openMap('osm')" class="bg-green-500 text-white hover:bg-green-600 font-semibold py-2 px-4 rounded-lg transition">OpenStreetMap</button>
+            </div>
+            <p id="copyNotification" class="text-center text-green-600 font-medium mt-3 h-5"></p>
+        </div>
+
+        <!-- Recent Searches -->
+        <div id="historyContainer" class="mt-8">
+            <h2 class="text-xl font-bold text-slate-700 mb-3">Búsquedas Recientes</h2>
+            <div id="historyList" class="space-y-2">
+                <!-- History items will be injected here by JS -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const suggestionsList = document.getElementById('suggestionsList');
+        const loader = document.getElementById('loader');
+        const actionsCard = document.getElementById('actionsCard');
+        const selectedLocationName = document.getElementById('selectedLocationName');
+        const copyNotification = document.getElementById('copyNotification');
+        const historyList = document.getElementById('historyList');
+        const historyContainer = document.getElementById('historyContainer');
+
+        let debounceTimeout;
+        let activeSuggestionIndex = -1;
+        let currentSuggestions = [];
+        let selectedLocation = null;
+
+        const HISTORY_KEY = 'locationSearchHistory';
+        const MAX_HISTORY_ITEMS = 5;
+
+        // --- Event Listeners ---
+        searchInput.addEventListener('input', () => {
+            clearTimeout(debounceTimeout);
+            actionsCard.classList.add('hidden');
+            selectedLocation = null;
+            const query = searchInput.value.trim();
+
+            if (query.length >= 3) {
+                debounceTimeout = setTimeout(() => fetchSuggestions(query), 300);
+            } else {
+                suggestionsList.classList.add('hidden');
+            }
+        });
+
+        searchInput.addEventListener('keydown', (e) => {
+            const items = suggestionsList.getElementsByClassName('suggestion-item');
+            if (items.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                activeSuggestionIndex = (activeSuggestionIndex + 1) % items.length;
+                updateActiveSuggestion(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                activeSuggestionIndex = (activeSuggestionIndex - 1 + items.length) % items.length;
+                updateActiveSuggestion(items);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (activeSuggestionIndex > -1) {
+                    items[activeSuggestionIndex].click();
+                }
+            }
+        });
+        
+        document.addEventListener('DOMContentLoaded', loadHistory);
+
+        // --- Core Functions ---
+        async function fetchSuggestions(query) {
+            loader.classList.remove('hidden');
+            suggestionsList.classList.add('hidden');
+            try {
+                const response = await fetch(`/autocomplete?query=${encodeURIComponent(query)}`);
+                if (!response.ok) throw new Error('La respuesta de la red no fue correcta.');
+                currentSuggestions = await response.json();
+                displaySuggestions(currentSuggestions);
+            } catch (error) {
+                console.error('Error al obtener sugerencias:', error);
+                suggestionsList.innerHTML = `<li class="p-3 text-center text-red-500">${error.message}</li>`;
+                suggestionsList.classList.remove('hidden');
+            } finally {
+                loader.classList.add('hidden');
+            }
+        }
+        
+        function displaySuggestions(suggestions) {
+            suggestionsList.innerHTML = '';
+            if (suggestions.length === 0) {
+                suggestionsList.innerHTML = '<li class="p-3 text-center text-slate-500">No se encontraron resultados.</li>';
+            } else {
+                suggestions.forEach((item, index) => {
+                    const li = document.createElement('li');
+                    li.className = 'suggestion-item p-3 cursor-pointer hover:bg-blue-500 hover:text-white transition-colors duration-150';
+                    li.textContent = item.display_name;
+                    li.addEventListener('click', () => selectSuggestion(item));
+                    suggestionsList.appendChild(li);
+                });
+            }
+            suggestionsList.classList.remove('hidden');
+            activeSuggestionIndex = -1;
+        }
+        
+        function selectSuggestion(item) {
+            selectedLocation = item;
+            searchInput.value = item.display_name;
+            suggestionsList.classList.add('hidden');
+            
+            selectedLocationName.textContent = item.display_name.split(',')[0];
+            actionsCard.classList.remove('hidden');
+            
+            saveToHistory(item);
+            loadHistory();
+        }
+
+        // --- Action Functions ---
+        function copyToClipboard(type) {
+            if (!selectedLocation) return;
+            const textToCopy = type === 'coords'
+                ? `${selectedLocation.lat}, ${selectedLocation.lon}`
+                : selectedLocation.display_name;
+            
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showNotification(`'${type === 'coords' ? 'Coordenadas' : 'Dirección'}' copiada al portapapeles!`);
+            } catch (err) {
+                console.error('No se pudo copiar: ', err);
+                showNotification('Error al copiar.', true);
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function openMap(service) {
+            if (!selectedLocation) return;
+            const { lat, lon } = selectedLocation;
+            let url;
+            if (service === 'google') {
+                url = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+            } else if (service === 'osm') {
+                url = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}`;
+            }
+            if(url) window.open(url, '_blank');
+        }
+
+        function showNotification(message, isError = false) {
+            copyNotification.textContent = message;
+            copyNotification.className = `text-center font-medium mt-3 h-5 ${isError ? 'text-red-500' : 'text-green-600'}`;
+            setTimeout(() => {
+                copyNotification.textContent = '';
+            }, 3000);
+        }
+
+        // --- Keyboard Navigation ---
+        function updateActiveSuggestion(items) {
+            for (let i = 0; i < items.length; i++) {
+                items[i].classList.remove('active');
+            }
+            if (activeSuggestionIndex > -1) {
+                items[activeSuggestionIndex].classList.add('active');
+                items[activeSuggestionIndex].scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        // --- History Functions ---
+        function getHistory() {
+            const history = localStorage.getItem(HISTORY_KEY);
+            return history ? JSON.parse(history) : [];
+        }
+
+        function saveToHistory(item) {
+            let history = getHistory();
+            // Evitar duplicados
+            history = history.filter(h => h.osm_id !== item.osm_id);
+            // Añadir al principio
+            history.unshift(item);
+            // Limitar al tamaño máximo
+            if (history.length > MAX_HISTORY_ITEMS) {
+                history = history.slice(0, MAX_HISTORY_ITEMS);
+            }
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        }
+
+        function loadHistory() {
+            const history = getHistory();
+            historyList.innerHTML = '';
+            
+            if (history.length === 0) {
+                 historyContainer.classList.add('hidden');
+                 return;
+            }
+            
+            historyContainer.classList.remove('hidden');
+            history.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'bg-white p-3 rounded-lg shadow-sm flex justify-between items-center cursor-pointer hover:bg-slate-50';
+                div.innerHTML = `<span class="font-medium text-slate-600 truncate">${item.display_name}</span>`;
+                div.addEventListener('click', () => {
+                    searchInput.value = item.display_name;
+                    searchInput.focus();
+                    fetchSuggestions(item.display_name);
+                });
+                historyList.appendChild(div);
+            });
+        }
+    </script>
+</body>
+</html>

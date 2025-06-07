@@ -1,0 +1,15 @@
+[project]
+authors = [
+  {name = "Christopher Villamarín", email = "alexpila.314@gmail.com"},
+]
+dependencies = [
+  "fastapi>=0.115.12",
+  "python-multipart>=0.0.20",
+  "requests>=2.32.3",
+  "uvicorn>=0.34.3",
+]
+description = "API de autocompletado eficiente basada en FastAPI para mejorar la experiencia de usuario en aplicaciones web y móviles."
+name = "autocompleter"
+readme = "README.md"
+requires-python = ">=3.11"
+version = "0.1.0"
