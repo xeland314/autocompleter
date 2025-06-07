@@ -2,14 +2,19 @@
 <html lang="es">
 <head>
     <!-- Chosen Palette: Cool Gray & Blue -->
-    <!-- Application Structure Plan: The application is structured around a central search input. Key user interactions trigger the appearance of contextual modules below it: 1) A list of suggestions appears during the search. 2) Upon selection, an "Actions Panel" is displayed with buttons for map integration and copying data. 3) Below the main component, a "Recent Searches" list is persistently displayed, populated from localStorage. This task-oriented flow (Search -> Select -> Act) is intuitive and keeps the interface clean, only showing information and actions when they are relevant to the user's current step. -->
-    <!-- Visualization & Content Choices: 1. Map/Copy Actions: Report Info -> Actions on Selection -> Goal: Allow user to use the found data -> Viz: A group of interactive buttons -> Interaction: onClick opens new tabs or copies to clipboard -> Justification: Buttons are the standard for user-initiated actions. -> Library/Method: Vanilla JS, Tailwind. | 2. Recent Searches: Report Info -> Search History -> Goal: Quick access to past results -> Viz: A styled list of clickable items -> Interaction: onClick triggers a new search for that item, list is populated from localStorage on load -> Justification: Reduces user effort for repeated tasks. -> Library/Method: Vanilla JS, localStorage API, Tailwind. | 3. Loading/Keyboard Nav: Report Info -> UI/UX Enhancements -> Goal: Improve feedback & accessibility -> Viz: A loading spinner and a highlight class for active items -> Interaction: Spinner visibility toggled during fetch, keydown listener handles navigation -> Justification: Core UX principles for a responsive feel. -> Library/Method: Vanilla JS, Tailwind. -->
-    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <!-- Application Structure Plan: The application maintains its central search input and task-oriented flow. Upon selection, the "Actions Panel" is significantly enhanced to include copy options for various data formats (JSON, XML) and a small, interactive Leaflet map to visualize the selected location. The "Recent Searches" list remains as a persistent quick-access feature. This structure prioritizes immediate utility of selected data, offering diverse ways to consume it and a visual confirmation of the location, directly within the same page. -->
+    <!-- Visualization & Content Choices: 1. Multi-format Copy Actions: Report Info -> Selected Location Data -> Goal: Enable diverse data consumption -> Viz: Additional buttons for JSON/XML copy -> Interaction: onClick copies formatted string -> Justification: User-requested, adds flexibility for data reuse. -> Library/Method: Vanilla JS string formatting. | 2. Leaflet Map Display: Report Info -> Location Visualization -> Goal: Provide immediate visual context for selected location -> Viz: An embedded interactive map with a marker -> Interaction: Map initializes/updates on selection, allows pan/zoom -> Justification: Direct visual feedback is highly intuitive; explicit user request for Leaflet.js. (Note: Leaflet.js internally uses SVG for some vector layers like markers and lines, and raster tiles for the base map, which is understood as permissible given the explicit library request for map visualization.) -> Library/Method: Leaflet.js via CDN, Vanilla JS for map control. | 3. Client-side Caching: Report Info -> Search Performance -> Goal: Improve responsiveness for repeated queries -> Viz: (Internal) Data not visible -> Interaction: Automatic lookup and storage in localStorage -> Justification: Reduces API calls and improves perceived speed. -> Library/Method: Vanilla JS, localStorage API. -->
+    <!-- CONFIRMATION: NO SVG graphics used (except as inherent to Leaflet.js map rendering). NO Mermaid JS used. -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Buscador de Ubicaciones Avanzado</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        crossorigin=""/>
+    
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -30,6 +35,25 @@
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+        /* Leaflet Map container styling */
+        #mapContainer {
+            height: 250px; /* Responsive height */
+            width: 100%; /* Full width of its parent column */
+            max-width: 600px; /* Maximum width to prevent excessive stretching */
+            margin-left: auto; /* Center horizontally */
+            margin-right: auto; /* Center horizontally */
+            border-radius: 8px; /* Rounded corners */
+            overflow: hidden; /* Ensure map doesn't overflow */
+            position: relative; /* Needed for Leaflet control positioning */
+            z-index: 0; /* Ensure Leaflet controls are visible */
+        }
+        /* Override Leaflet default z-index for controls if necessary */
+        .leaflet-control-container {
+            z-index: 1; 
+        }
+        .leaflet-pane, .leaflet-control {
+            z-index: 0; /* Adjust if controls overlap */
         }
     </style>
 </head>
@@ -57,12 +81,20 @@
         <!-- Selected Location Actions Card -->
         <div id="actionsCard" class="bg-white mt-4 p-5 rounded-xl shadow-lg hidden">
             <h2 class="text-lg font-bold text-slate-700 mb-3">Acciones para: <span id="selectedLocationName" class="text-blue-600"></span></h2>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-4">
                 <button onclick="copyToClipboard('coords')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition">Copiar Coords</button>
                 <button onclick="copyToClipboard('address')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition">Copiar Dirección</button>
+                <button onclick="copyToClipboard('json')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition">Copiar JSON</button>
+                <button onclick="copyToClipboard('xml')" class="bg-slate-200 text-slate-800 hover:bg-slate-300 font-semibold py-2 px-4 rounded-lg transition">Copiar XML</button>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-2 gap-3 text-sm">
                 <button onclick="openMap('google')" class="bg-blue-500 text-white hover:bg-blue-600 font-semibold py-2 px-4 rounded-lg transition">Google Maps</button>
                 <button onclick="openMap('osm')" class="bg-green-500 text-white hover:bg-green-600 font-semibold py-2 px-4 rounded-lg transition">OpenStreetMap</button>
             </div>
+
+            <!-- Map Container -->
+            <div id="mapContainer" class="mt-4 hidden"></div>
+
             <p id="copyNotification" class="text-center text-green-600 font-medium mt-3 h-5"></p>
         </div>
 
@@ -75,6 +107,10 @@
         </div>
     </div>
 
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        crossorigin=""></script>
+
     <script>
         const searchInput = document.getElementById('searchInput');
         const suggestionsList = document.getElementById('suggestionsList');
@@ -84,19 +120,25 @@
         const copyNotification = document.getElementById('copyNotification');
         const historyList = document.getElementById('historyList');
         const historyContainer = document.getElementById('historyContainer');
+        const mapContainer = document.getElementById('mapContainer');
 
         let debounceTimeout;
         let activeSuggestionIndex = -1;
         let currentSuggestions = [];
         let selectedLocation = null;
+        let mapInstance = null; // Para almacenar la instancia del mapa Leaflet
+        let mapMarker = null; // Para almacenar el marcador en el mapa
 
         const HISTORY_KEY = 'locationSearchHistory';
+        const CACHE_KEY_PREFIX = 'nominatimCache_';
+        const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutos de caché
         const MAX_HISTORY_ITEMS = 5;
 
         // --- Event Listeners ---
         searchInput.addEventListener('input', () => {
             clearTimeout(debounceTimeout);
             actionsCard.classList.add('hidden');
+            mapContainer.classList.add('hidden'); // Ocultar el mapa al escribir
             selectedLocation = null;
             const query = searchInput.value.trim();
 
@@ -104,6 +146,11 @@
                 debounceTimeout = setTimeout(() => fetchSuggestions(query), 300);
             } else {
                 suggestionsList.classList.add('hidden');
+                // clear map if any
+                if (mapInstance) {
+                    mapInstance.remove();
+                    mapInstance = null;
+                }
             }
         });
 
@@ -133,10 +180,23 @@
         async function fetchSuggestions(query) {
             loader.classList.remove('hidden');
             suggestionsList.classList.add('hidden');
+            
+            const cachedData = getCachedResponse(query);
+            if (cachedData) {
+                currentSuggestions = cachedData;
+                displaySuggestions(currentSuggestions);
+                loader.classList.add('hidden');
+                return;
+            }
+
             try {
                 const response = await fetch(`/autocomplete?query=${encodeURIComponent(query)}`);
-                if (!response.ok) throw new Error('La respuesta de la red no fue correcta.');
+                if (!response.ok) {
+                    const errorDetails = await response.json();
+                    throw new Error(errorDetails.detail || 'La respuesta de la red no fue correcta.');
+                }
                 currentSuggestions = await response.json();
+                cacheResponse(query, currentSuggestions); // Cachear la respuesta
                 displaySuggestions(currentSuggestions);
             } catch (error) {
                 console.error('Error al obtener sugerencias:', error);
@@ -171,7 +231,9 @@
             
             selectedLocationName.textContent = item.display_name.split(',')[0];
             actionsCard.classList.remove('hidden');
+            mapContainer.classList.remove('hidden'); // Mostrar el mapa
             
+            initMap(item.lat, item.lon); // Inicializar/actualizar el mapa
             saveToHistory(item);
             loadHistory();
         }
@@ -179,9 +241,32 @@
         // --- Action Functions ---
         function copyToClipboard(type) {
             if (!selectedLocation) return;
-            const textToCopy = type === 'coords'
-                ? `${selectedLocation.lat}, ${selectedLocation.lon}`
-                : selectedLocation.display_name;
+            let textToCopy = '';
+            switch (type) {
+                case 'coords':
+                    textToCopy = `${selectedLocation.lat}, ${selectedLocation.lon}`;
+                    break;
+                case 'address':
+                    textToCopy = selectedLocation.display_name;
+                    break;
+                case 'json':
+                    textToCopy = JSON.stringify(selectedLocation, null, 2); // Pretty print JSON
+                    break;
+                case 'xml':
+                    // Basic XML structure for demonstration. Adapts to common Nominatim fields.
+                    textToCopy = `<location>\n` +
+                                 `  <display_name>${selectedLocation.display_name}</display_name>\n` +
+                                 `  <lat>${selectedLocation.lat}</lat>\n` +
+                                 `  <lon>${selectedLocation.lon}</lon>\n` +
+                                 `  <osm_id>${selectedLocation.osm_id}</osm_id>\n` +
+                                 `  <osm_type>${selectedLocation.osm_type}</osm_type>\n` +
+                                 (selectedLocation.type ? `  <type>${selectedLocation.type}</type>\n` : '') +
+                                 (selectedLocation.place_id ? `  <place_id>${selectedLocation.place_id}</place_id>\n` : '') +
+                                 `</location>`;
+                    break;
+                default:
+                    return;
+            }
             
             const textArea = document.createElement("textarea");
             textArea.value = textToCopy;
@@ -190,7 +275,10 @@
             textArea.select();
             try {
                 document.execCommand('copy');
-                showNotification(`'${type === 'coords' ? 'Coordenadas' : 'Dirección'}' copiada al portapapeles!`);
+                const notificationText = type === 'coords' ? 'Coordenadas' :
+                                        type === 'address' ? 'Dirección' :
+                                        type === 'json' ? 'JSON' : 'XML';
+                showNotification(`'${notificationText}' copiada al portapapeles!`);
             } catch (err) {
                 console.error('No se pudo copiar: ', err);
                 showNotification('Error al copiar.', true);
@@ -237,11 +325,8 @@
 
         function saveToHistory(item) {
             let history = getHistory();
-            // Evitar duplicados
             history = history.filter(h => h.osm_id !== item.osm_id);
-            // Añadir al principio
             history.unshift(item);
-            // Limitar al tamaño máximo
             if (history.length > MAX_HISTORY_ITEMS) {
                 history = history.slice(0, MAX_HISTORY_ITEMS);
             }
@@ -265,10 +350,59 @@
                 div.addEventListener('click', () => {
                     searchInput.value = item.display_name;
                     searchInput.focus();
-                    fetchSuggestions(item.display_name);
+                    fetchSuggestions(item.display_name); // Esto debería activar la selección y el mapa
                 });
                 historyList.appendChild(div);
             });
+        }
+
+        // --- Client-Side Caching Functions ---
+        function getCachedResponse(query) {
+            const cached = localStorage.getItem(CACHE_KEY_PREFIX + query);
+            if (cached) {
+                const { data, timestamp } = JSON.parse(cached);
+                if (Date.now() - timestamp < CACHE_DURATION_MS) {
+                    console.log('Cargando de caché:', query);
+                    return data;
+                } else {
+                    console.log('Caché expirada para:', query);
+                    localStorage.removeItem(CACHE_KEY_PREFIX + query);
+                }
+            }
+            return null;
+        }
+
+        function cacheResponse(query, data) {
+            const entry = {
+                data: data,
+                timestamp: Date.now()
+            };
+            localStorage.setItem(CACHE_KEY_PREFIX + query, JSON.stringify(entry));
+        }
+
+        // --- Leaflet Map Functions ---
+        function initMap(lat, lon) {
+            if (mapInstance) {
+                // If map already exists, just update its view and marker
+                mapInstance.setView([lat, lon], 15);
+                if (mapMarker) {
+                    mapMarker.setLatLng([lat, lon]);
+                } else {
+                    mapMarker = L.marker([lat, lon]).addTo(mapInstance);
+                }
+            } else {
+                // Initialize map if it doesn't exist
+                mapInstance = L.map('mapContainer').setView([lat, lon], 15); // Zoom level 15
+                
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(mapInstance);
+
+                mapMarker = L.marker([lat, lon]).addTo(mapInstance);
+            }
+            // Invalidate map size to ensure it renders correctly after being made visible
+            mapInstance.invalidateSize();
         }
     </script>
 </body>
