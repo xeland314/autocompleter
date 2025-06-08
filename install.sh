@@ -43,6 +43,10 @@ fi
 sudo cp main.py "$INSTALL_DIR/"
 sudo cp pyproject.toml "$INSTALL_DIR/"
 sudo cp -r static/ "$INSTALL_DIR/"
+sudo cp rate_limiter.py "$INSTALL_DIR/"
+sudo cp nominatim_client.py "$INSTALL_DIR/"
+sudo cp cache.py "$INSTALL_DIR/"
+sudo cp scoring_model.py "$INSTALL_DIR/"
 sudo cp "$SERVICE_FILE" "$INSTALL_DIR/" # Copia el archivo de servicio también aquí temporalmente
 
 # Asignar propiedad al usuario del sistema para que pueda crear el venv
@@ -57,6 +61,9 @@ cd "$INSTALL_DIR" || { echo -e "${RED}Error: No se pudo cambiar al directorio '$
 echo -e "${YELLOW}4. Configurando entorno virtual e instalando dependencias...${NC}"
 UV_PATH=$(command -v "$UV_COMMAND" 2>/dev/null) # Obtiene la ruta de uv para el usuario actual
 USE_UV=false
+
+echo -e "${YELLOW}Instalando redis${NC}"
+sudo apt update && sudo apt install redis-server -y
 
 if [ -n "$UV_PATH" ]; then
     # Intenta verificar si el usuario del servicio puede ejecutar 'uv'.

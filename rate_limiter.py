@@ -11,11 +11,11 @@ request_history = defaultdict(deque)
 
 # Define los límites de solicitudes en segundos
 # Se ha eliminado el límite explícito por segundo para permitir mayor fluidez.
-LIMIT_PER_MINUTE = 60
+LIMIT_PER_MINUTE = 3000
 WINDOW_MINUTE = 60.0
-LIMIT_PER_HOUR = 500
+LIMIT_PER_HOUR = 3000
 WINDOW_HOUR = 3600.0
-LIMIT_PER_DAY = 2000
+LIMIT_PER_DAY = 100000
 WINDOW_DAY = 86400.0
 
 

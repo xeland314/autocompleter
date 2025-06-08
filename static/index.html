@@ -3,17 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <!-- Chosen Palette: Cool Gray & Blue -->
-    <!-- Application Structure Plan: The application maintains its central search input and task-oriented flow. Upon selection, the "Actions Panel" is significantly enhanced to include copy options for various data formats (JSON, XML) and a small, interactive Leaflet map to visualize the selected location. The "Recent Searches" list remains as a persistent quick-access feature. This structure prioritizes immediate utility of selected data, offering diverse ways to consume it and a visual confirmation of the location, directly within the same page. -->
-    <!-- Visualization & Content Choices: 1. Multi-format Copy Actions: Report Info -> Selected Location Data -> Goal: Enable diverse data consumption -> Viz: Additional buttons for JSON/XML copy -> Interaction: onClick copies formatted string -> Justification: User-requested, adds flexibility for data reuse. -> Library/Method: Vanilla JS string formatting. | 2. Leaflet Map Display: Report Info -> Location Visualization -> Goal: Provide immediate visual context for selected location -> Viz: An embedded interactive map with a marker -> Interaction: Map initializes/updates on selection, allows pan/zoom -> Justification: Direct visual feedback is highly intuitive; explicit user request for Leaflet.js. (Note: Leaflet.js internally uses SVG for some vector layers like markers and lines, and raster tiles for the base map, which is understood as permissible given the explicit library request for map visualization.) -> Library/Method: Leaflet.js via CDN, Vanilla JS for map control. | 3. Client-side Caching: Report Info -> Search Performance -> Goal: Improve responsiveness for repeated queries -> Viz: (Internal) Data not visible -> Interaction: Automatic lookup and storage in localStorage -> Justification: Reduces API calls and improves perceived speed. -> Library/Method: Vanilla JS, localStorage API. -->
+    <!-- Application Structure Plan: The core search and action flow remains unchanged. The "Actions Panel" with copy options for various data formats (JSON, XML) and the embedded Leaflet map are preserved. The "Recent Searches" list continues to provide quick access. The key structural update is the integration of a backend feedback loop, where user selections inform the "training" (relevance scoring) of the autocomplete suggestions, implicitly improving future results. -->
+    <!-- Visualization & Content Choices: 1. Multi-format Copy Actions: Preserved for diverse data consumption. 2. Leaflet Map Display: Preserved for immediate visual context. 3. Client-side Caching: Preserved for improved responsiveness. 4. Feedback Mechanism: Report Info -> User Interaction Data -> Goal: Collect explicit user selections to refine relevance -> Viz: (Internal) No direct UI, but improves search quality -> Interaction: On click of a suggestion, sends data to /feedback endpoint -> Justification: Core to the "AI-like" training; essential for long-term relevance improvement. -> Library/Method: Vanilla JS fetch POST request. -->
     <!-- CONFIRMATION: NO SVG graphics used (except as inherent to Leaflet.js map rendering). NO Mermaid JS used. -->
-    
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Buscador de Ubicaciones Avanzado</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        crossorigin=""/>
     
     <style>
         body {
@@ -202,6 +203,7 @@
             }
 
             try {
+                // La llamada ahora es a nuestro endpoint de FastAPI, que gestionará el Nominatim y el scoring
                 const response = await fetch(`/autocomplete?query=${encodeURIComponent(query)}`);
                 if (!response.ok) {
                     const errorDetails = await response.json();
@@ -236,7 +238,7 @@
             activeSuggestionIndex = -1;
         }
         
-        function selectSuggestion(item) {
+        async function selectSuggestion(item) {
             selectedLocation = item;
             searchInput.value = item.display_name;
             suggestionsList.classList.add('hidden');
@@ -248,6 +250,30 @@
             initMap(item.lat, item.lon); // Inicializar/actualizar el mapa
             saveToHistory(item);
             loadHistory();
+
+            // --- Enviar feedback al backend ---
+            try {
+                await fetch('/feedback', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: searchInput.value.trim(), // La consulta original que llevó a esta selección
+                        selected_item: {
+                            osm_id: item.osm_id,
+                            display_name: item.display_name,
+                            lat: item.lat,
+                            lon: item.lon,
+                            type: item.type,
+                            // Incluye otros campos relevantes si quieres que el backend los almacene
+                        }
+                    })
+                });
+                console.log('Feedback enviado con éxito.');
+            } catch (error) {
+                console.error('Error al enviar feedback:', error);
+            }
         }
 
         // --- Action Functions ---

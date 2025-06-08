@@ -1,156 +1,135 @@
 import os
+from typing import Dict, Any
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-import requests
-from fuzzywuzzy import fuzz
 
+# Importa los módulos refactorizados
 from rate_limiter import rate_limit_dependency
+from nominatim_client import NominatimClient
+from cache import RedisCache, FeedbackStore
+from scoring_model import AutocompleteScorer
 
 # Inicializa la aplicación FastAPI
 app = FastAPI()
 
-# Configura CORS para permitir solicitudes desde cualquier origen
+# Configura CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite todos los orígenes
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Permite todos los métodos (GET, POST, etc.)
-    allow_headers=["*"],  # Permite todas las cabeceras
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Monta el directorio 'static' para servir archivos estáticos como CSS, JS e imágenes.
-# Asegúrate de que este directorio exista en la misma ubicación que tu archivo main.py
-# y que contenga tu index.html.
+# Monta el directorio 'static'
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# --- Inicialización de Clientes y Modelos ---
+# Cliente de Nominatim
+nominatim_client = NominatimClient(base_url="http://127.0.0.1:8088")
+
+# Caché de Redis para respuestas de Nominatim (expire de 5 minutos)
+redis_cache = RedisCache(expire_time_seconds=300)
+
+# Almacén de Feedback y Popularidad con SQLite
+# El archivo de base de datos se creará en el mismo directorio que main.py
+feedback_store = FeedbackStore(
+    db_path=os.path.join(os.path.dirname(__file__), "feedback.db")
+)
+
+# Modelo de scoring con integración de feedback
+autocomplete_scorer = AutocompleteScorer(feedback_store=feedback_store)
+
+
+# --- Rutas de la Aplicación ---
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     """
-    Esta ruta sirve el archivo index.html cuando los usuarios acceden a la URL raíz de tu aplicación
-    (por ejemplo, http://127.0.0.1:8000/).
-    Lee el contenido del archivo index.html y lo devuelve como una respuesta HTML.
+    Sirve el archivo index.html.
     """
-    # Construye la ruta completa al archivo index.html dentro del directorio 'static'
     html_file_path = os.path.join("static", "index.html")
-
-    # Verifica si el archivo index.html realmente existe en la ruta esperada
     if not os.path.exists(html_file_path):
-        # Si el archivo no se encuentra, se lanza una excepción HTTPException 404
         raise HTTPException(
             status_code=404,
             detail="index.html no encontrado en el directorio 'static'.",
         )
-
-    # Abre y lee el contenido del archivo index.html
     with open(html_file_path, "r", encoding="utf-8") as f:
         html_content = f.read()
-
-    # Devuelve el contenido HTML como una respuesta HTML
     return HTMLResponse(content=html_content)
 
 
 @app.get("/autocomplete", dependencies=[Depends(rate_limit_dependency)])
-def autocomplete(query: str):
+async def autocomplete(query: str):
     """
-    Este endpoint maneja las solicitudes de autocompletado.
-    Recibe un parámetro 'query' y lo utiliza para consultar el servicio Nominatim
-    (o cualquier otro servicio de búsqueda local que tengas en 127.0.0.1:8088).
-    Luego, post-procesa los resultados para mejorar la clasificación y la coincidencia difusa.
-    Devuelve las sugerencias de autocompletado en formato JSON.
+    Maneja las solicitudes de autocompletado, usando caché, Nominatim y el modelo de scoring.
     """
     try:
-        # Volvemos a usar el endpoint /search de Nominatim
-        nominatim_url = f"http://127.0.0.1:8088/search?q={query}&format=json"
+        # Intentar obtener la respuesta de la caché de Redis primero
+        cached_suggestions = redis_cache.get(query.lower())
+        if cached_suggestions:
+            print(f"Cargando sugerencias de caché para: {query}")
+            return cached_suggestions
 
-        response = requests.get(nominatim_url, timeout=5)
-        response.raise_for_status()  # Lanza un error para códigos de estado 4xx/5xx
+        # Si no está en caché, consultar a Nominatim
+        print(f"Consultando Nominatim para: {query}")
+        nominatim_suggestions = nominatim_client.search(query)
 
-        nominatim_suggestions = response.json()
-
-        # --- Lógica de Post-Procesamiento para Autocompletado ---
-        processed_suggestions = []
-        for item in nominatim_suggestions:
-            display_name: str = item.get("display_name", "")
-
-            # Calcular score de coincidencia difusa (fuzz.ratio)
-            # Este score es entre 0 y 100, donde 100 es una coincidencia perfecta.
-            fuzzy_score = fuzz.ratio(query.lower(), display_name.lower())
-
-            # Coincidencia de prefijo (priorizar si la consulta es un prefijo fuerte)
-            prefix_match_score = 0
-            if display_name.lower().startswith(query.lower()):
-                prefix_match_score = (
-                    20  # Bonificación por coincidencia de prefijo fuerte
-                )
-
-            # Coincidencia parcial (por ejemplo, si "New York" se busca con "York")
-            partial_score = fuzz.partial_ratio(query.lower(), display_name.lower())
-
-            # --- Algoritmo de Clasificación de Relevancia (personalizado) ---
-            # Combinamos varios factores para una relevancia más útil para autocompletado.
-            # Puedes ajustar los pesos según tus necesidades.
-
-            # Base de Nominatim (normalizada a 0-1)
-            nominatim_relevance = float(item.get("importance", 0.0)) * 100
-
-            # Prioridad por tipo de lugar (ej. ciudades antes que números de casa)
-            type_priority = 0
-            place_type = item.get("type", "").lower()
-            if place_type in ["city", "town", "village", "hamlet"]:
-                type_priority = 100  # Alta prioridad para lugares grandes
-            elif place_type in ["road", "street", "highway"]:
-                type_priority = 50  # Prioridad media para calles
-            elif place_type in ["house", "house_number", "building"]:
-                type_priority = 10  # Baja prioridad para direcciones muy específicas
-
-            # Score combinado: ajusta los pesos para cada factor
-            # Puedes jugar con estos multiplicadores para obtener los resultados deseados.
-            custom_score = (
-                (fuzzy_score * 0.4)  # Pondera la coincidencia difusa
-                + (
-                    partial_score * 0.3
-                )  # Pondera la coincidencia parcial (útil para sufijos)
-                + (
-                    nominatim_relevance * 0.2
-                )  # Pondera la relevancia original de Nominatim
-                + (prefix_match_score * 0.1)  # Bonificación extra por prefijo
-                + (type_priority * 0.05)  # Bonificación por tipo de lugar
-            )
-
-            item["custom_autocomplete_score"] = custom_score
-            processed_suggestions.append(item)
-
-        # Ordenar las sugerencias por el score personalizado de forma descendente
-        # También podemos añadir un criterio secundario, como la importancia de Nominatim
-        processed_suggestions.sort(
-            key=lambda x: (x["custom_autocomplete_score"], x.get("importance", 0.0)),
-            reverse=True,
+        # Post-procesar y ordenar las sugerencias usando el modelo de scoring
+        processed_suggestions = autocomplete_scorer.sort_suggestions(
+            query, nominatim_suggestions
         )
 
-        # Limitar el número de resultados a devolver (ej. 10 o 20)
-        # Esto es crucial para el rendimiento del frontend.
-        return processed_suggestions[:20]
+        # Limitar el número de resultados para el frontend (ej. 10 o 20)
+        final_suggestions = processed_suggestions[:20]
 
-    except requests.exceptions.RequestException as e:
+        # Guardar la respuesta en la caché de Redis
+        redis_cache.set(query.lower(), final_suggestions)
+
+        return final_suggestions
+
+    except ConnectionError as e:
         raise HTTPException(
-            status_code=500, detail=f"Error al conectar con el servicio Nominatim: {e}"
+            status_code=500, detail=f"Error de conexión con Nominatim: {e}"
         ) from e
     except ValueError as e:
         raise HTTPException(
-            status_code=500, detail=f"Error al procesar la respuesta de Nominatim: {e}"
+            status_code=500, detail=f"Error de procesamiento de datos: {e}"
         ) from e
+    except HTTPException:  # Re-raise HTTPExceptions from rate_limit_dependency
+        raise
     except Exception as e:
-        # Captura cualquier otra excepción inesperada
         raise HTTPException(
-            status_code=500, detail=f"Ocurrió un error inesperado: {e}"
+            status_code=500,
+            detail=f"Ocurrió un error inesperado en el autocompletado: {e}",
         ) from e
 
 
-# Este bloque permite ejecutar la aplicación usando `python main.py` directamente.
-# En un entorno de producción, es más común usar 'uvicorn main:app'.
+@app.post("/feedback")
+async def record_feedback(feedback_data: Dict[str, Any]):
+    """
+    Endpoint para recibir feedback del cliente (por ejemplo, la sugerencia seleccionada).
+    """
+    query = feedback_data.get("query")
+    selected_item = feedback_data.get("selected_item")
+
+    if not query or not selected_item:
+        raise HTTPException(
+            status_code=400, detail="Faltan datos de feedback (query o selected_item)."
+        )
+
+    try:
+        feedback_store.record_selection(query, selected_item)
+        return {"message": "Feedback registrado exitosamente."}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error al registrar feedback: {e}"
+        ) from e
+
+
+# --- Ejecución de la Aplicación ---
 if __name__ == "__main__":
     import uvicorn
 
